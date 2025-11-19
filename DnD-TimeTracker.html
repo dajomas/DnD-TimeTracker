@@ -1,0 +1,443 @@
+<!--
+
+Original repository for this code: https://github.com/dajomas/DnD-TimeTracker
+
+DISCLAIMER:
+I have generated this code using Perplexity.ai
+
+This code is released in MIT license
+
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>D&D Time Tracker</title>
+  <style>
+    body { font-family: Arial; margin: 2rem; background: #eee; max-width: 40rem; }
+
+    #display-fancy {
+      display: flex;
+      align-items: baseline;
+      gap: 1.1em;
+      margin-bottom: 1rem;
+      font-size: 2.1rem;
+      letter-spacing: 0.04em;
+      font-family: system-ui, sans-serif;
+    }
+    #display-fancy .days {
+      font-weight: bold;
+      font-size: 1.3em;
+      color: #ba1a1a;
+      padding-right: 0.1em;
+      min-width: 4em;
+    }
+    #display-fancy .hmss {
+      font-family: "SFMono-Regular", "Consolas", "Menlo", monospace;
+      background: #222;
+      color: #fff;
+      border-radius: 6px;
+      padding: 0.07em 0.5em 0.13em 0.5em;
+      font-size: 0.98em;
+      letter-spacing: 0.06em;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: max-content auto;
+      gap: 0.6em 1em;
+      margin-bottom: 0.8em;
+      align-items: center;
+      width: fit-content;
+    }
+    .controls label {
+      text-align: right;
+      margin-right: 0.2em;
+      min-width: 10em;
+      font-weight: normal;
+      font-size: 1em;
+    }
+    .timing-input {
+      width: 4ch;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      margin-right: 0.1em;
+    }
+    .main-time-buttons { display: flex; gap: 0.7em; margin-bottom: 1em; }
+
+    .countdown-controls input[type="number"] {
+      width: auto;
+      min-width: 2.5em;
+      max-width: 2.5em;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .countdown input, .countdown .color-picker { width: 4em; }
+    button { margin: 0.2rem; }
+    .countdown { 
+      margin: 0.5rem 0;
+      padding: 0.5rem; 
+      background: #ddd; 
+      border-radius: 4px;
+      transition: background 0.3s;
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 1em;
+    }
+    .flashing {
+      animation: flash-bg 0.6s alternate infinite;
+    }
+    .button-group {
+      display: inline-block;
+      margin-left: 1rem;
+    }
+    #resetAllBtn { margin-left: 0; margin-bottom: 0.7em; }
+    .color-picker {
+      border: none;
+      background: none;
+      margin-left: 1em;
+      padding: 0 0 0 0;
+      width: 2.2em;
+      height: 2.2em;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <h1>D&D Time Tracker</h1>
+  <div id="display-fancy">
+    <span class="days"></span>
+    <span class="hmss"></span>
+  </div>
+  <div class="controls">
+    <label for="roundInput">Combat Round</label>
+    <span>
+      <input id="roundInput" type="number" min="1" class="timing-input">
+      s
+    </span>
+    <label for="shortRestInput">Short Rest</label>
+    <span>
+      <input id="shortRestInput" type="number" min="1" class="timing-input">
+      min
+    </span>
+    <label for="longRestInput">Long Rest</label>
+    <span>
+      <input id="longRestInput" type="number" min="1" class="timing-input">
+      hr
+    </span>
+    <span></span>
+    <button id="saveDurationsBtn">Save Durations</button>
+  </div>
+  <div>
+    <button id="startBtn">Start</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="resumeBtn">Resume</button>
+    <button id="resetBtn">Reset Tracker</button>
+  </div>
+  <div class="main-time-buttons">
+    <button id="combatBtn">Add Combat Round</button>
+    <button id="shortRestBtn">Add Short Rest</button>
+    <button id="longRestBtn">Add Long Rest</button>
+  </div>
+  <hr>
+  <h2>Countdown Timers</h2>
+  <button id="resetAllBtn">Reset All Timers</button>
+  <div class="countdown-controls">
+    <label>Hours: <input id="cdHour" type="number" min="0" value="0" size="3"></label>
+    <label>Minutes: <input id="cdMinute" type="number" min="0" max="59" value="0" size="3"></label>
+    <label>Seconds: <input id="cdSecond" type="number" min="0" max="59" value="0" size="3"></label>
+    <button id="startCountdownBtn">Add Countdown</button>
+  </div>
+  <div id="countdownList"></div>
+
+  <script>
+    function loadConfig() {
+      return {
+        roundSeconds: parseInt(localStorage.getItem('roundSeconds')) || 6,
+        shortRestMinutes: parseInt(localStorage.getItem('shortRestMinutes')) || 60,
+        longRestHours: parseInt(localStorage.getItem('longRestHours')) || 8,
+        totalSeconds: parseInt(localStorage.getItem('totalSeconds')) || 0,
+        countdowns: JSON.parse(localStorage.getItem('countdowns') || '[]')
+      };
+    }
+    function saveConfig() {
+      localStorage.setItem('roundSeconds', roundSeconds);
+      localStorage.setItem('shortRestMinutes', shortRestMinutes);
+      localStorage.setItem('longRestHours', longRestHours);
+      localStorage.setItem('totalSeconds', totalSeconds);
+      localStorage.setItem('countdowns', JSON.stringify(countdowns));
+    }
+    function saveTime() {
+      localStorage.setItem('totalSeconds', totalSeconds);
+    }
+
+    let {roundSeconds, shortRestMinutes, longRestHours, totalSeconds, countdowns} = loadConfig();
+    let running = false, timer = null;
+
+    function getMaxIteration() {
+      if (!countdowns.length) return 1;
+      return Math.max(...countdowns.map(cd => cd.iteration || 1));
+    }
+    function updateTitle() {
+      const n = getMaxIteration();
+      document.title = `D&D Time Tracker [${n}]`;
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("roundInput").value = roundSeconds;
+      document.getElementById("shortRestInput").value = shortRestMinutes;
+      document.getElementById("longRestInput").value = longRestHours;
+      updateDisplay();
+      renderCountdowns();
+      updateTitle();
+    });
+
+    document.getElementById("saveDurationsBtn").onclick = () => {
+      roundSeconds = parseInt(document.getElementById("roundInput").value) || 6;
+      shortRestMinutes = parseInt(document.getElementById("shortRestInput").value) || 60;
+      longRestHours = parseInt(document.getElementById("longRestInput").value) || 8;
+      saveConfig();
+    };
+
+    // FANCY time display Update
+    function updateDisplay() {
+      let s = totalSeconds;
+      const days = Math.floor(s / (24 * 3600));
+      s %= (24 * 3600);
+      const hours = Math.floor(s / 3600);
+      s %= 3600;
+      const minutes = Math.floor(s / 60);
+      s %= 60;
+      document.querySelector('#display-fancy .days').textContent =
+        `${days} day${days === 1 ? '' : 's'}`;
+      document.querySelector('#display-fancy .hmss').textContent =
+        `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    function tick() {
+      if (running) {
+        totalSeconds++;
+        updateDisplay();
+        saveTime();
+      }
+    }
+    document.getElementById("startBtn").onclick = () => {
+      if (!timer) {
+        running = true;
+        timer = setInterval(tick, 1000);
+      }
+    };
+    document.getElementById("pauseBtn").onclick = () => { running = false; };
+    document.getElementById("resumeBtn").onclick = () => { running = true; };
+    document.getElementById("combatBtn").onclick = () => {
+      totalSeconds += roundSeconds;
+      updateDisplay();
+      saveTime();
+    };
+    document.getElementById("shortRestBtn").onclick = () => {
+      totalSeconds += shortRestMinutes * 60;
+      updateDisplay();
+      saveTime();
+    };
+    document.getElementById("longRestBtn").onclick = () => {
+      totalSeconds += longRestHours * 3600;
+      updateDisplay();
+      saveTime();
+    };
+    document.getElementById("resetBtn").onclick = () => {
+      totalSeconds = 0;
+      updateDisplay();
+      saveTime();
+    };
+
+    document.getElementById("resetAllBtn").onclick = () => {
+      countdowns.forEach(cd => {
+        clearInterval(cd.interval);
+        cd.running = false;
+        cd.remaining = cd.seconds;
+        cd.flashing = false;
+        cd.finished = false;
+        cd.iteration = 1;
+        // Do NOT reset totalIteration here
+      });
+      renderCountdowns();
+      saveConfig();
+      updateTitle();
+    };
+
+    function addCountdown(seconds) {
+      const id = Date.now() + Math.floor(Math.random()*100000);
+      countdowns.push({
+        id,
+        seconds,
+        remaining: seconds,
+        running: false,
+        flashing: false,
+        finished: false,
+        iteration: 1,
+        totalIteration: 1,
+        color: "#ee5050"
+      });
+      renderCountdowns();
+      saveConfig();
+      updateTitle();
+    }
+    function renderCountdowns() {
+      const list = document.getElementById("countdownList");
+      list.innerHTML = '';
+      countdowns.forEach(cd => {
+        let style = '';
+        if (cd.flashing) {
+          style = `animation: flash-bg-${cd.id} 0.6s alternate infinite;`;
+          injectDynamicKeyframes(cd.id, cd.color || "#ee5050");
+        }
+        const div = document.createElement('div');
+        div.className = 'countdown' + (cd.flashing ? ' flashing' : '');
+        div.id = 'cd-section-' + cd.id;
+        div.style = style;
+
+        div.innerHTML = `
+          <span id="cd-${cd.id}">${formatTime(cd.remaining)}</span>
+          <span style="margin-left:1em;">[${cd.iteration || 1}] [${cd.totalIteration || 1}]</span>
+          <input type="color" class="color-picker" value="${cd.color || '#ee5050'}"
+                 onchange="window.pickColor(${cd.id}, this.value)">
+        `;
+        if (!cd.finished) {
+          div.innerHTML += `
+            <button onclick="window.toggleCountdown(${cd.id})">${cd.running ? 'Pause' : 'Start'}</button>
+            <button onclick="window.resetCountdown(${cd.id})">Reset</button>
+            <button onclick="window.resetTotalCountdown(${cd.id})">Reset Total</button>
+            <button onclick="window.removeCountdown(${cd.id})">Remove</button>
+          `;
+        }
+        if (cd.finished) {
+          div.innerHTML += `
+            <span class="button-group">
+              <button onclick="window.restartCountdown(${cd.id})">Restart</button>
+              <button onclick="window.resetCountdown(${cd.id})">Reset</button>
+              <button onclick="window.resetTotalCountdown(${cd.id})">Reset Total</button>
+            </span>
+          `;
+        }
+        list.appendChild(div);
+      });
+    }
+
+    function injectDynamicKeyframes(id, flashColor) {
+      const styleId = "style-flash-"+id;
+      let styleElem = document.getElementById(styleId);
+      if (!styleElem) {
+        styleElem = document.createElement("style");
+        styleElem.id = styleId;
+        document.head.appendChild(styleElem);
+      }
+      styleElem.textContent = `
+      @keyframes flash-bg-${id} {
+        from { background: #ffe0e0; }
+        to   { background: ${flashColor}; }
+      }`;
+    }
+
+    window.pickColor = function(id, val) {
+      const cd = countdowns.find(c => c.id === id);
+      if (!cd) return;
+      cd.color = val;
+      saveConfig();
+      renderCountdowns();
+    }
+    window.resetTotalCountdown = function(id) {
+      const cd = countdowns.find(c => c.id === id);
+      if (!cd) return;
+      cd.totalIteration = 1;
+      saveConfig();
+      renderCountdowns();
+    }
+
+    function formatTime(seconds) {
+      const hrs = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      return [hrs, mins, secs].map(unit => String(unit).padStart(2, '0')).join(':');
+    }
+    function countdownTick(cd) {
+      if (cd.running && cd.remaining > 0) {
+        cd.remaining--;
+        document.getElementById(`cd-${cd.id}`).textContent = formatTime(cd.remaining);
+        saveConfig();
+        if (cd.remaining === 0) {
+          clearInterval(cd.interval);
+          cd.running = false;
+          cd.flashing = true;
+          cd.finished = true;
+          renderCountdowns();
+          saveConfig();
+        }
+      }
+    }
+    window.toggleCountdown = function(id) {
+      const cd = countdowns.find(c => c.id === id);
+      if (!cd) return;
+      if (cd.running) {
+        cd.running = false;
+        clearInterval(cd.interval);
+      } else {
+        cd.running = true;
+        cd.interval = setInterval(() => countdownTick(cd), 1000);
+      }
+      renderCountdowns();
+      saveConfig();
+    }
+    window.resetCountdown = function(id) {
+      const cd = countdowns.find(c => c.id === id);
+      if (!cd) return;
+      clearInterval(cd.interval);
+      cd.running = false;
+      cd.remaining = cd.seconds;
+      cd.flashing = false;
+      cd.finished = false;
+      cd.iteration = 1;
+      renderCountdowns();
+      saveConfig();
+      updateTitle();
+    };
+    window.restartCountdown = function(id) {
+      const cd = countdowns.find(c => c.id === id);
+      if (!cd) return;
+      clearInterval(cd.interval);
+      cd.remaining = cd.seconds;
+      cd.flashing = false;
+      cd.finished = false;
+      cd.iteration = (cd.iteration || 1) + 1;
+      cd.totalIteration = (cd.totalIteration || 1) + 1;
+      cd.running = true;
+      cd.interval = setInterval(() => countdownTick(cd), 1000);
+      renderCountdowns();
+      saveConfig();
+      updateTitle();
+    };
+    window.removeCountdown = function(id) {
+      const idx = countdowns.findIndex(c => c.id === id);
+      if (idx !== -1) {
+        clearInterval(countdowns[idx].interval);
+        const styleElem = document.getElementById("style-flash-"+countdowns[idx].id);
+        if (styleElem) styleElem.remove();
+        countdowns.splice(idx, 1);
+      }
+      renderCountdowns();
+      saveConfig();
+      updateTitle();
+    }
+
+    document.getElementById("startCountdownBtn").onclick = () => {
+      const hours = parseInt(document.getElementById("cdHour").value) || 0;
+      const minutes = parseInt(document.getElementById("cdMinute").value) || 0;
+      const seconds = parseInt(document.getElementById("cdSecond").value) || 0;
+      const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+      if (totalSeconds > 0) addCountdown(totalSeconds);
+    };
+
+    updateDisplay();
+  </script>
+</body>
+</html>
