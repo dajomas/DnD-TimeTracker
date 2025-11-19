@@ -1,3 +1,7 @@
+# DISCLAIMER
+
+This Readme file and the HTML file are fully created using [Perplexity.ai](https://perplexity.ai)
+
 # D&D Time Tracker
 
 A feature-rich, browser-based timer designed for tabletop RPGs (especially Dungeons & Dragons), with persistent storage, visually appealing time display, and advanced countdown tracking for spells and effects.
