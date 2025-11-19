@@ -1,4 +1,4 @@
-It started as a try-out but became this really nice utility so I decided to share it with the world.
+It started out as a try-out to see what [Perplexity.ai](https://perplexity.ai) could do, but it became this really nice utility so I decided to share it with the world.
 
 Here are the prompts I used to get to this version:
 * I would like to have a website that can track D&D time, it must be able to be paused during combat and add each combat round as the defined time. Can you create this using javascript?
