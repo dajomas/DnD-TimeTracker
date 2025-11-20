@@ -18,6 +18,11 @@ Here are the prompts I used to get to this version:
 * Can you remove the label for the Total field and add a Reset Total button for each timer
 * Can you reformat the passed time to display "number of days" days HH:MM:SS?
 * can you format the passed time so it looks more fancy?
+* can you connect the timers to the main time tracker. so that when the main time tracker is paused, the timers pause as well and when a Combat Round, Short Rest or Long Rest is added, that time is added to the timers as well.
+* Can you add an optional description for the countdown timers, defaulting to "Timer x" where x is the index number of the timer
+* If a timer was not yet started, it should not start when the main tracker is started. It should only continue if it had already been started
+* Can you compact the countdown timer to a single line
+* Can you align the timers so that the times are aligned?
 
 And the Readme was created with the following promtp:
 * Can you write a readme for this ?
