@@ -16,6 +16,7 @@ This code is released in MIT license
   <style>
     body { font-family: Arial; margin: 2rem; background: #eee; max-width: 40rem; }
 
+    /* Fancy main time display */
     #display-fancy {
       display: flex;
       align-items: baseline;
@@ -65,6 +66,13 @@ This code is released in MIT license
     }
     .main-time-buttons { display: flex; gap: 0.7em; margin-bottom: 1em; }
 
+    .countdown-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em 1em;
+      align-items: center;
+      margin-bottom: 0.5em;
+    }
     .countdown-controls input[type="number"] {
       width: auto;
       min-width: 2.5em;
@@ -72,44 +80,80 @@ This code is released in MIT license
       text-align: right;
       font-variant-numeric: tabular-nums;
     }
-    .countdown input, .countdown .color-picker { width: 4em; }
+    .countdown-controls input[type="text"] {
+      min-width: 10em;
+    }
+
     button { margin: 0.2rem; }
-    .countdown { 
-      margin: 0.5rem 0;
-      padding: 0.5rem; 
-      background: #ddd; 
+
+    .countdown {
+      margin: 0.2rem 0;
+      padding: 0.3rem 0.4rem;
+      background: #ddd;
       border-radius: 4px;
       transition: background 0.3s;
-      position: relative;
       display: flex;
       align-items: center;
-      gap: 1em;
+      gap: 0.4em;
+      font-size: 0.9rem;
     }
+    .countdown-title {
+      font-weight: bold;
+      max-width: 11em;
+      min-width: 11em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .countdown-time {
+      font-family: "SFMono-Regular", "Consolas", "Menlo", monospace;
+      padding: 0 0.3em;
+      min-width: 5.3em;  /* "HH:MM:SS" width */
+      text-align: right;
+    }
+    .countdown-iter {
+      font-size: 0.85em;
+      opacity: 0.8;
+      min-width: 4.5em;
+    }
+    .countdown-buttons {
+      display: flex;
+      gap: 0.2em;
+      margin-left: auto;
+    }
+    .countdown-buttons button {
+      font-size: 0.8em;
+      padding: 0.1em 0.3em;
+    }
+
     .flashing {
       animation: flash-bg 0.6s alternate infinite;
     }
-    .button-group {
-      display: inline-block;
-      margin-left: 1rem;
+    @keyframes flash-bg {
+      from { background: #ffe0e0; }
+      to   { background: #ee5050; }
     }
+
     #resetAllBtn { margin-left: 0; margin-bottom: 0.7em; }
     .color-picker {
       border: none;
       background: none;
-      margin-left: 1em;
-      padding: 0 0 0 0;
-      width: 2.2em;
-      height: 2.2em;
-      vertical-align: middle;
+      width: 1.8em;
+      height: 1.8em;
+      padding: 0;
     }
   </style>
 </head>
 <body>
   <h1>D&D Time Tracker</h1>
+
+  <!-- Fancy main time display -->
   <div id="display-fancy">
     <span class="days"></span>
     <span class="hmss"></span>
   </div>
+
+  <!-- Main time configuration -->
   <div class="controls">
     <label for="roundInput">Combat Round</label>
     <span>
@@ -129,6 +173,8 @@ This code is released in MIT license
     <span></span>
     <button id="saveDurationsBtn">Save Durations</button>
   </div>
+
+  <!-- Main time controls -->
   <div>
     <button id="startBtn">Start</button>
     <button id="pauseBtn">Pause</button>
@@ -140,18 +186,23 @@ This code is released in MIT license
     <button id="shortRestBtn">Add Short Rest</button>
     <button id="longRestBtn">Add Long Rest</button>
   </div>
+
   <hr>
+
+  <!-- Countdown timers -->
   <h2>Countdown Timers</h2>
   <button id="resetAllBtn">Reset All Timers</button>
   <div class="countdown-controls">
     <label>Hours: <input id="cdHour" type="number" min="0" value="0" size="3"></label>
     <label>Minutes: <input id="cdMinute" type="number" min="0" max="59" value="0" size="3"></label>
     <label>Seconds: <input id="cdSecond" type="number" min="0" max="59" value="0" size="3"></label>
+    <label>Description: <input id="cdDescription" type="text" placeholder="Optional description"></label>
     <button id="startCountdownBtn">Add Countdown</button>
   </div>
   <div id="countdownList"></div>
 
   <script>
+    /* -------- Persistence -------- */
     function loadConfig() {
       return {
         roundSeconds: parseInt(localStorage.getItem('roundSeconds')) || 6,
@@ -173,7 +224,8 @@ This code is released in MIT license
     }
 
     let {roundSeconds, shortRestMinutes, longRestHours, totalSeconds, countdowns} = loadConfig();
-    let running = false, timer = null;
+    let running = false;
+    let mainTimer = null; // drives main time + countdowns
 
     function getMaxIteration() {
       if (!countdowns.length) return 1;
@@ -200,7 +252,7 @@ This code is released in MIT license
       saveConfig();
     };
 
-    // FANCY time display Update
+    /* -------- Fancy main time display -------- */
     function updateDisplay() {
       let s = totalSeconds;
       const days = Math.floor(s / (24 * 3600));
@@ -215,36 +267,84 @@ This code is released in MIT license
         `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
     }
 
-    function tick() {
-      if (running) {
-        totalSeconds++;
-        updateDisplay();
+    /* -------- Main game tick -------- */
+    function gameTick() {
+      if (!running) return;
+
+      totalSeconds++;
+      updateDisplay();
+
+      let changed = false;
+      countdowns.forEach(cd => {
+        if (cd.running && cd.remaining > 0) {
+          cd.remaining--;
+          const span = document.getElementById(`cd-${cd.id}`);
+          if (span) span.textContent = formatTime(cd.remaining);
+          if (cd.remaining === 0) {
+            cd.running = false;
+            cd.flashing = true;
+            cd.finished = true;
+          }
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        renderCountdowns();
+        saveConfig();
+      } else {
         saveTime();
       }
     }
-    document.getElementById("startBtn").onclick = () => {
-      if (!timer) {
-        running = true;
-        timer = setInterval(tick, 1000);
+
+    function ensureMainTimer() {
+      if (!mainTimer) {
+        mainTimer = setInterval(gameTick, 1000);
       }
+    }
+
+    /* -------- Main controls -------- */
+    document.getElementById("startBtn").onclick = () => {
+      running = true;
+      ensureMainTimer();
     };
-    document.getElementById("pauseBtn").onclick = () => { running = false; };
-    document.getElementById("resumeBtn").onclick = () => { running = true; };
-    document.getElementById("combatBtn").onclick = () => {
-      totalSeconds += roundSeconds;
+    document.getElementById("pauseBtn").onclick = () => {
+      running = false;
+    };
+    document.getElementById("resumeBtn").onclick = () => {
+      running = true;
+      ensureMainTimer();
+    };
+
+    function addGameSeconds(delta) {
+      totalSeconds += delta;
       updateDisplay();
-      saveTime();
+
+      countdowns.forEach(cd => {
+        if (cd.running && cd.remaining > 0) {
+          cd.remaining = Math.max(0, cd.remaining - delta);
+          if (cd.remaining === 0) {
+            cd.running = false;
+            cd.flashing = true;
+            cd.finished = true;
+          }
+        }
+      });
+
+      renderCountdowns();
+      saveConfig();
+    }
+
+    document.getElementById("combatBtn").onclick = () => {
+      addGameSeconds(roundSeconds);
     };
     document.getElementById("shortRestBtn").onclick = () => {
-      totalSeconds += shortRestMinutes * 60;
-      updateDisplay();
-      saveTime();
+      addGameSeconds(shortRestMinutes * 60);
     };
     document.getElementById("longRestBtn").onclick = () => {
-      totalSeconds += longRestHours * 3600;
-      updateDisplay();
-      saveTime();
+      addGameSeconds(longRestHours * 3600);
     };
+
     document.getElementById("resetBtn").onclick = () => {
       totalSeconds = 0;
       updateDisplay();
@@ -253,38 +353,45 @@ This code is released in MIT license
 
     document.getElementById("resetAllBtn").onclick = () => {
       countdowns.forEach(cd => {
-        clearInterval(cd.interval);
         cd.running = false;
         cd.remaining = cd.seconds;
         cd.flashing = false;
         cd.finished = false;
         cd.iteration = 1;
-        // Do NOT reset totalIteration here
       });
       renderCountdowns();
       saveConfig();
       updateTitle();
     };
 
-    function addCountdown(seconds) {
+    /* -------- Countdown management -------- */
+    function addCountdown(seconds, description) {
+      const index = countdowns.length + 1;
+      const label = (description && description.trim().length > 0)
+        ? description.trim()
+        : `Timer ${index}`;
+
       const id = Date.now() + Math.floor(Math.random()*100000);
       countdowns.push({
         id,
         seconds,
         remaining: seconds,
-        running: false,
+        running: false,     // new timers do NOT start automatically
         flashing: false,
         finished: false,
         iteration: 1,
         totalIteration: 1,
-        color: "#ee5050"
+        color: "#ee5050",
+        description: label
       });
       renderCountdowns();
       saveConfig();
       updateTitle();
     }
+
     function renderCountdowns() {
       const list = document.getElementById("countdownList");
+      if (!list) return;
       list.innerHTML = '';
       countdowns.forEach(cd => {
         let style = '';
@@ -297,29 +404,27 @@ This code is released in MIT license
         div.id = 'cd-section-' + cd.id;
         div.style = style;
 
+        const title = cd.description || 'Timer';
+
         div.innerHTML = `
-          <span id="cd-${cd.id}">${formatTime(cd.remaining)}</span>
-          <span style="margin-left:1em;">[${cd.iteration || 1}] [${cd.totalIteration || 1}]</span>
+          <span class="countdown-title">${title}</span>
+          <span class="countdown-time" id="cd-${cd.id}">${formatTime(cd.remaining)}</span>
+          <span class="countdown-iter">[${cd.iteration || 1}] [${cd.totalIteration || 1}]</span>
           <input type="color" class="color-picker" value="${cd.color || '#ee5050'}"
                  onchange="window.pickColor(${cd.id}, this.value)">
-        `;
-        if (!cd.finished) {
-          div.innerHTML += `
-            <button onclick="window.toggleCountdown(${cd.id})">${cd.running ? 'Pause' : 'Start'}</button>
-            <button onclick="window.resetCountdown(${cd.id})">Reset</button>
-            <button onclick="window.resetTotalCountdown(${cd.id})">Reset Total</button>
-            <button onclick="window.removeCountdown(${cd.id})">Remove</button>
-          `;
-        }
-        if (cd.finished) {
-          div.innerHTML += `
-            <span class="button-group">
+          <span class="countdown-buttons">
+            ${!cd.finished ? `
+              <button onclick="window.toggleCountdown(${cd.id})">${cd.running ? 'Pause' : 'Start'}</button>
+              <button onclick="window.resetCountdown(${cd.id})">Reset</button>
+              <button onclick="window.resetTotalCountdown(${cd.id})">Reset Total</button>
+              <button onclick="window.removeCountdown(${cd.id})">X</button>
+            ` : `
               <button onclick="window.restartCountdown(${cd.id})">Restart</button>
               <button onclick="window.resetCountdown(${cd.id})">Reset</button>
               <button onclick="window.resetTotalCountdown(${cd.id})">Reset Total</button>
-            </span>
-          `;
-        }
+            `}
+          </span>
+        `;
         list.appendChild(div);
       });
     }
@@ -345,14 +450,14 @@ This code is released in MIT license
       cd.color = val;
       saveConfig();
       renderCountdowns();
-    }
+    };
     window.resetTotalCountdown = function(id) {
       const cd = countdowns.find(c => c.id === id);
       if (!cd) return;
       cd.totalIteration = 1;
       saveConfig();
       renderCountdowns();
-    }
+    };
 
     function formatTime(seconds) {
       const hrs = Math.floor(seconds / 3600);
@@ -360,38 +465,18 @@ This code is released in MIT license
       const secs = seconds % 60;
       return [hrs, mins, secs].map(unit => String(unit).padStart(2, '0')).join(':');
     }
-    function countdownTick(cd) {
-      if (cd.running && cd.remaining > 0) {
-        cd.remaining--;
-        document.getElementById(`cd-${cd.id}`).textContent = formatTime(cd.remaining);
-        saveConfig();
-        if (cd.remaining === 0) {
-          clearInterval(cd.interval);
-          cd.running = false;
-          cd.flashing = true;
-          cd.finished = true;
-          renderCountdowns();
-          saveConfig();
-        }
-      }
-    }
+
     window.toggleCountdown = function(id) {
       const cd = countdowns.find(c => c.id === id);
       if (!cd) return;
-      if (cd.running) {
-        cd.running = false;
-        clearInterval(cd.interval);
-      } else {
-        cd.running = true;
-        cd.interval = setInterval(() => countdownTick(cd), 1000);
-      }
+      cd.running = !cd.running;
+      ensureMainTimer();
       renderCountdowns();
       saveConfig();
-    }
+    };
     window.resetCountdown = function(id) {
       const cd = countdowns.find(c => c.id === id);
       if (!cd) return;
-      clearInterval(cd.interval);
       cd.running = false;
       cd.remaining = cd.seconds;
       cd.flashing = false;
@@ -404,14 +489,13 @@ This code is released in MIT license
     window.restartCountdown = function(id) {
       const cd = countdowns.find(c => c.id === id);
       if (!cd) return;
-      clearInterval(cd.interval);
       cd.remaining = cd.seconds;
       cd.flashing = false;
       cd.finished = false;
       cd.iteration = (cd.iteration || 1) + 1;
       cd.totalIteration = (cd.totalIteration || 1) + 1;
       cd.running = true;
-      cd.interval = setInterval(() => countdownTick(cd), 1000);
+      ensureMainTimer();
       renderCountdowns();
       saveConfig();
       updateTitle();
@@ -419,7 +503,6 @@ This code is released in MIT license
     window.removeCountdown = function(id) {
       const idx = countdowns.findIndex(c => c.id === id);
       if (idx !== -1) {
-        clearInterval(countdowns[idx].interval);
         const styleElem = document.getElementById("style-flash-"+countdowns[idx].id);
         if (styleElem) styleElem.remove();
         countdowns.splice(idx, 1);
@@ -427,14 +510,15 @@ This code is released in MIT license
       renderCountdowns();
       saveConfig();
       updateTitle();
-    }
+    };
 
     document.getElementById("startCountdownBtn").onclick = () => {
       const hours = parseInt(document.getElementById("cdHour").value) || 0;
       const minutes = parseInt(document.getElementById("cdMinute").value) || 0;
       const seconds = parseInt(document.getElementById("cdSecond").value) || 0;
-      const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-      if (totalSeconds > 0) addCountdown(totalSeconds);
+      const total = hours * 3600 + minutes * 60 + seconds;
+      const desc = document.getElementById("cdDescription").value || '';
+      if (total > 0) addCountdown(total, desc);
     };
 
     updateDisplay();
