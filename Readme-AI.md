@@ -24,7 +24,11 @@ Here are the prompts I used to get to this version:
 * Can you compact the countdown timer to a single line
 * Can you align the timers so that the times are aligned?
 
+Added without AI:
+* The copy button and functionality on countdown timers
+
 And the Readme was created with the following promtp:
 * Can you write a readme for this ?
 
 I expect you will not get the exact same results when you try this on another AI platform or even Perplexity.
+

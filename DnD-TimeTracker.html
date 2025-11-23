@@ -417,6 +417,7 @@ This code is released in MIT license
               <button onclick="window.toggleCountdown(${cd.id})">${cd.running ? 'Pause' : 'Start'}</button>
               <button onclick="window.resetCountdown(${cd.id})">Reset</button>
               <button onclick="window.resetTotalCountdown(${cd.id})">Reset Total</button>
+              <button onclick="window.copyCountdown(${cd.id})">Copy</button>
               <button onclick="window.removeCountdown(${cd.id})">X</button>
             ` : `
               <button onclick="window.restartCountdown(${cd.id})">Restart</button>
@@ -442,6 +443,34 @@ This code is released in MIT license
         from { background: #ffe0e0; }
         to   { background: ${flashColor}; }
       }`;
+    }
+
+    function incrementBracketNumber(str) {
+      const regex = /\s-\s\[(\d+)\]/;
+      const match = str.match(regex);
+      // strip counter if it exists
+      let tstr = str.replace(regex, '');
+
+      let maxX = 0;
+      // find the highest counter value
+      countdowns.forEach(c => {
+        if (c.description.startsWith(tstr)) {
+          const match = c.description.match(regex);
+          if (match) {
+            const x = parseInt(match[1], 10);
+            if (x > maxX) {
+              maxX = x;
+            }
+          }
+        }
+      });
+      let newNum = 1;
+      if (maxX > 0) {
+        // add one to the highest counter value if it exists
+        newNum = maxX + 1;
+      }
+      // If pattern not found, append [1]
+      return `${tstr} - [${newNum}]`;
     }
 
     window.pickColor = function(id, val) {
@@ -511,6 +540,12 @@ This code is released in MIT license
       saveConfig();
       updateTitle();
     };
+
+    window.copyCountdown = function(id) {
+      const cd = countdowns.find(c => c.id === id);
+      if (!cd) return;
+      addCountdown(cd.seconds, incrementBracketNumber(cd.description));
+    }
 
     document.getElementById("startCountdownBtn").onclick = () => {
       const hours = parseInt(document.getElementById("cdHour").value) || 0;
